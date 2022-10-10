@@ -3,6 +3,7 @@
 # TODO: make docker container with autodownload geckodriver and autoinstalling selenium and BeautifulSoup
 import sys
 from collections import OrderedDict
+from datetime import date, timedelta
 from pprint import pprint
 from time import sleep
 
@@ -47,7 +48,7 @@ def get_menu(generated_html):
         print(l)
     index = None
     for i, line in enumerate(lines):
-        if 'суп ' in line.lower() or ' суп' in line.lower():
+        if ('суп ' in line.lower() or ' суп' in line.lower()) and i > 10:
             index = i
             break
     lines = lines[:index]
@@ -90,6 +91,7 @@ def get_dish_info(dish_name, dish_href):
             x = tag.text
             if 'можно приготовить' in x.lower() or 'минут' in x.lower():
                 print(x)
+        return None
     dish_description = sorted(short_list, key=lambda x: len(x), reverse=True)[0]
     fixed_line = dish_description\
         .lower()\
@@ -101,6 +103,10 @@ def get_dish_info(dish_name, dish_href):
         .replace('на 100 г блюда', '\n')\
         .replace('можно приготовить на ', '\n')
     splitted_fixed_line = fixed_line.split('\n')
+    if splitted_fixed_line[0] == "испанские кальмарыдля копчения дома за 15 минут" \
+            or splitted_fixed_line[0] == 'французский мини-багетдля выпекания за 5 минут':
+        # terrible crutch for one special case. Damned heuristics
+        splitted_fixed_line = [splitted_fixed_line[0]] + splitted_fixed_line[2:]
     day = splitted_fixed_line[1][:2].strip()
     minutes = splitted_fixed_line[2][:2].strip()
     ingredients = splitted_fixed_line[5].strip()
@@ -121,7 +127,8 @@ def process_all_dishes(dish_name_to_href):
         dish_href = dish[1]
         print('i', i)
         dish_info = get_dish_info(dish_name, dish_href)
-        dish_info_list.append(dish_info)
+        if dish_info is not None:
+            dish_info_list.append(dish_info)
         print(dish_info)
         print()
 
@@ -131,14 +138,20 @@ def process_all_dishes(dish_name_to_href):
 def dump_dish_info_list_to_file(dish_info_list, filename):
     table_header = ['блюдо', 'день', 'цена', 'время', 'состав']
     header = '\t'.join(table_header)
-    table_lines = list(sorted(dish_info_list, key=lambda x: (int(x['day']), int(x['price']))))
+    table_lines = list(sorted(dish_info_list, key=lambda x: (int(x['day'] or 0), int(x['price']))))
     table_lines = ['\t'.join(x.values()) for x in table_lines]
     final_table = '\n'.join([header] + table_lines)
     open(filename, 'w').write(final_table)
 
 
 if __name__ == '__main__':
-    week_start_date_str = sys.argv[-1]
+    # week_start_date_str = sys.argv[-1]
+    d = date.today()
+    i = 0
+    while d.weekday() != 0:
+        d = d + timedelta(days=1)
+    week_start_date_str = d.strftime('%Y-%m-%d')
+
     browser = get_setup_browser_driver()
     elementaree_link = get_elementaree_link(week_start_date_str)
 
@@ -151,5 +164,5 @@ if __name__ == '__main__':
     dish_name_to_href = get_menu(browser.page_source)
 
     dish_info_list = process_all_dishes(dish_name_to_href)
-    filename = sys.argv[-1] + '.tsv'
+    filename = week_start_date_str + '.tsv'
     dump_dish_info_list_to_file(dish_info_list, filename)
